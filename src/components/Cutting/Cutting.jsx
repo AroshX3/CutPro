@@ -184,14 +184,14 @@ export default function CuttingEngine() {
 
   // presets in display units (converted to mm when applied)
   const presets = [
-    { label: "22 × 28", w: 22, h: 28 },
-    { label: "28 × 44", w: 28, h: 44 },
-    { label: "20 × 30", w: 20, h: 30 },
-    { label: "23 × 36", w: 23, h: 36 },
-    { label: "31 × 43", w: 31, h: 43 },
-    { label: "29 × 44", w: 29, h: 44 },
-    { label: "25 × 35.5", w: 25, h: 35.5 },
-    { label: "25 × 37 (MAX)", w: 25, h: 37 },
+    { label: "28 × 22", w: 28, h: 22 },
+    { label: "44 × 28", w: 44, h: 28 },
+    { label: "30 × 20", w: 30, h: 20 },
+    { label: "36 × 23", w: 36, h: 23 },
+    { label: "43 × 31", w: 43, h: 31 },
+    { label: "44 × 29", w: 44, h: 29 },
+    { label: "35.5 × 25", w: 35.5, h: 25 },
+    { label: "37 × 25", w: 37, h: 25 },
   ];
 
   // compute best/alt orientations (all inputs in mm)
@@ -314,12 +314,20 @@ export default function CuttingEngine() {
           <select
             value={unit}
             onChange={(e) => onChangeUnit(e.target.value)}
-            className="rounded px-2 py-1 text-sm"
+            className="rounded px-3 py-1.5 text-sm bg-black text-white border border-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="mm">mm</option>
-            <option value="cm">cm</option>
-            <option value="inch">inch</option>
-            <option value="meter">meter</option>
+            <option value="mm" className="bg-black text-white">
+              mm
+            </option>
+            <option value="cm" className="bg-black text-white">
+              cm
+            </option>
+            <option value="inch" className="bg-black text-white">
+              inch
+            </option>
+            <option value="meter" className="bg-black text-white">
+              meter
+            </option>
           </select>
 
           <button
@@ -511,11 +519,6 @@ export default function CuttingEngine() {
           </div>
         </aside>
       </div>
-
-      <footer className="text-center text-xs text-gray-400">
-        Mobile-first responsive layout done. Next: pinch-zoom preview &
-        tap-to-inspect pieces?
-      </footer>
     </div>
   );
 }
