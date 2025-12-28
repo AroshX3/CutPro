@@ -11,8 +11,8 @@ const Navbar = () => {
             <div className="Logo">
               <a href="">
                 <div className="p-4 bg-white">
-                  <h2 className="font-poppins font-semibold text-black text-[42px] flex items-baseline gap-1">
-                    CutPro <LuScissors className='text-[blue] ' />
+                  <h2 className="font-poppins font-semibold text-[42px] flex items-center gap-1">
+                    CutPro <LuScissors className="text-[blue] text-[38px]" />
                   </h2>
                 </div>
               </a>

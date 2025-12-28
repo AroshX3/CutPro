@@ -1,19 +1,49 @@
 import React, { useMemo, useState } from "react";
 
-/**
- * CuttingEngine_withRotation_v4.jsx
- * - Updates requested:
- *   • Remove the number input spinners (use text inputs with numeric inputMode)
- *   • Remove Edge Distance & Blade Thickness input controls (kept as internal defaults)
- *   • Move Presets + Unit selector to the top-right area next to action buttons
- *   • Keep presets handy, larger text, responsive layout
- */
+/* ===== Unit helpers ===== */
+const UNIT_FACTORS = {
+  mm: 1,
+  cm: 10,
+  inch: 25.4,
+  meter: 1000,
+};
+
+function toDisplay(mmValue, unit) {
+  const v = mmValue / (UNIT_FACTORS[unit] || 1);
+  return Number.isInteger(v)
+    ? String(v)
+    : v.toFixed(3).replace(/(?:\.0+|(\.\d+?)0+)$/, "$1");
+}
+
+function toMM(displayValue, unit) {
+  const v = Number(displayValue) || 0;
+  return v * (UNIT_FACTORS[unit] || 1);
+}
+
+function sanitizeNumberInput(value) {
+  if (value == null) return "";
+  const cleaned = String(value).replace(/[^0-9.]/g, "");
+  const parts = cleaned.split(".");
+  if (parts.length > 2) return parts[0] + "." + parts.slice(1).join("");
+  return cleaned;
+}
+
+/* ===== Packing utilities ===== */
+const EPS = 1e-9;
 
 function packIntoWaste({ strip, pieceW, pieceH, bladeThickness }) {
   if (!strip || strip.w <= 0 || strip.h <= 0) return [];
   const spacing = Math.max(0, bladeThickness);
-  const fitCountX = pieceW <= 0 ? 0 : Math.floor((strip.w + spacing) / (pieceW + spacing));
-  const fitCountY = pieceH <= 0 ? 0 : Math.floor((strip.h + spacing) / (pieceH + spacing));
+
+  const fitCountX =
+    pieceW <= 0
+      ? 0
+      : Math.floor((strip.w + spacing + EPS) / (pieceW + spacing));
+  const fitCountY =
+    pieceH <= 0
+      ? 0
+      : Math.floor((strip.h + spacing + EPS) / (pieceH + spacing));
+
   const pieces = [];
   for (let ix = 0; ix < fitCountX; ix++) {
     for (let iy = 0; iy < fitCountY; iy++) {
@@ -25,19 +55,26 @@ function packIntoWaste({ strip, pieceW, pieceH, bladeThickness }) {
   return pieces;
 }
 
-function computeForOrientation({ sheetW, sheetH, pieceW, pieceH, edgeDistance, bladeThickness, enableRotation = false }) {
+/* ===== Core orientation compute =====
+   All numbers passed are expected in the same unit (we use mm internally)
+*/
+function computeForOrientation({
+  sheetW,
+  sheetH,
+  pieceW,
+  pieceH,
+  edgeDistance,
+  bladeThickness,
+  enableRotation = false,
+}) {
   const effW = Math.max(0, sheetW - 2 * edgeDistance);
   const effH = Math.max(0, sheetH - 2 * edgeDistance);
   const spacing = Math.max(0, bladeThickness);
-  const fitCountX = pieceW <= 0 ? 0 : Math.floor((effW + spacing) / (pieceW + spacing));
-  const fitCountY = pieceH <= 0 ? 0 : Math.floor((effH + spacing) / (pieceH + spacing));
-  const totalPiecesPrimary = Math.max(0, fitCountX * fitCountY);
-  const usedW = fitCountX * pieceW + Math.max(0, fitCountX - 1) * spacing;
-  const usedH = fitCountY * pieceH + Math.max(0, fitCountY - 1) * spacing;
-  const leftoverInsideW = Math.max(0, effW - usedW);
-  const leftoverInsideH = Math.max(0, effH - usedH);
-  const rightStrip = { x: sheetW - edgeDistance - leftoverInsideW, y: edgeDistance, w: leftoverInsideW, h: sheetH - 2 * edgeDistance };
-  const bottomStrip = { x: edgeDistance, y: sheetH - edgeDistance - leftoverInsideH, w: sheetW - 2 * edgeDistance, h: leftoverInsideH };
+
+  const fitCountX =
+    pieceW <= 0 ? 0 : Math.floor((effW + spacing + EPS) / (pieceW + spacing));
+  const fitCountY =
+    pieceH <= 0 ? 0 : Math.floor((effH + spacing + EPS) / (pieceH + spacing));
 
   const piecesPrimary = [];
   for (let ix = 0; ix < fitCountX; ix++) {
@@ -48,21 +85,63 @@ function computeForOrientation({ sheetW, sheetH, pieceW, pieceH, edgeDistance, b
     }
   }
 
+  const usedW = fitCountX * pieceW + Math.max(0, fitCountX - 1) * spacing;
+  const usedH = fitCountY * pieceH + Math.max(0, fitCountY - 1) * spacing;
+  const leftoverInsideW = Math.max(0, effW - usedW);
+  const leftoverInsideH = Math.max(0, effH - usedH);
+
+  const rightStrip =
+    leftoverInsideW > 0
+      ? {
+          x: edgeDistance + usedW,
+          y: edgeDistance,
+          w: leftoverInsideW,
+          h: effH,
+        }
+      : null;
+  const bottomStrip =
+    leftoverInsideH > 0
+      ? {
+          x: edgeDistance,
+          y: edgeDistance + usedH,
+          w: effW,
+          h: leftoverInsideH,
+        }
+      : null;
+
   let rotatedInRight = [];
   let rotatedInBottom = [];
+
   if (enableRotation) {
+    const rightStripPack = rightStrip
+      ? { ...rightStrip, h: Math.max(0, rightStrip.h - leftoverInsideH) }
+      : null;
+    const bottomStripPack = bottomStrip
+      ? { ...bottomStrip, w: Math.max(0, bottomStrip.w - leftoverInsideW) }
+      : null;
     const rotatedW = pieceH;
     const rotatedH = pieceW;
-    const rightStripPack = rightStrip ? { ...rightStrip, h: Math.max(0, rightStrip.h - leftoverInsideH) } : null;
-    const bottomStripPack = bottomStrip ? { ...bottomStrip, w: Math.max(0, bottomStrip.w - leftoverInsideW) } : null;
-    rotatedInRight = packIntoWaste({ strip: rightStripPack, pieceW: rotatedW, pieceH: rotatedH, bladeThickness });
-    rotatedInBottom = packIntoWaste({ strip: bottomStripPack, pieceW: rotatedW, pieceH: rotatedH, bladeThickness });
+
+    rotatedInRight = packIntoWaste({
+      strip: rightStripPack,
+      pieceW: rotatedW,
+      pieceH: rotatedH,
+      bladeThickness: spacing,
+    });
+    rotatedInBottom = packIntoWaste({
+      strip: bottomStripPack,
+      pieceW: rotatedW,
+      pieceH: rotatedH,
+      bladeThickness: spacing,
+    });
   }
 
   const allPieces = [...piecesPrimary, ...rotatedInRight, ...rotatedInBottom];
+
   const sheetArea = sheetW * sheetH;
-  const piecesAreaPrimary = totalPiecesPrimary * pieceW * pieceH;
-  const rotatedPiecesArea = (rotatedInRight.length + rotatedInBottom.length) * pieceW * pieceH;
+  const piecesAreaPrimary = piecesPrimary.length * pieceW * pieceH;
+  const rotatedPiecesArea =
+    (rotatedInRight.length + rotatedInBottom.length) * pieceW * pieceH;
   const piecesArea = piecesAreaPrimary + rotatedPiecesArea;
   const wasteArea = Math.max(0, sheetArea - piecesArea);
   const wastePercent = sheetArea === 0 ? 0 : (wasteArea / sheetArea) * 100;
@@ -70,11 +149,11 @@ function computeForOrientation({ sheetW, sheetH, pieceW, pieceH, edgeDistance, b
   return {
     fitCountX,
     fitCountY,
-    totalPiecesPrimary,
+    totalPiecesPrimary: piecesPrimary.length,
     totalPieces: allPieces.length,
     pieces: allPieces,
-    rightStrip: leftoverInsideW > 0 ? rightStrip : null,
-    bottomStrip: leftoverInsideH > 0 ? bottomStrip : null,
+    rightStrip,
+    bottomStrip,
     leftoverInsideW,
     leftoverInsideH,
     usedW,
@@ -86,240 +165,357 @@ function computeForOrientation({ sheetW, sheetH, pieceW, pieceH, edgeDistance, b
   };
 }
 
+/* ===== Component ===== */
 export default function CuttingEngine() {
-  // visible inputs (numbers stored as numbers, but inputs are text to avoid spinners)
-  const [sheetW, setSheetW] = useState(1200);
-  const [sheetH, setSheetH] = useState(800);
-  const [cutW, setCutW] = useState(200);
-  const [cutH, setCutH] = useState(150);
-  const [unit, setUnit] = useState("mm");
+  // internal canonical units = mm
+  const [unit, setUnit] = useState("inch");
+
+  // sensible defaults (stored in mm)
+  const [sheetWmm, setSheetWmm] = useState(toMM(25, "inch"));
+  const [sheetHmm, setSheetHmm] = useState(toMM(35.5, "inch"));
+  const [cutWmm, setCutWmm] = useState(toMM(5, "inch"));
+  const [cutHmm, setCutHmm] = useState(toMM(7, "inch"));
+
   const [enableRotation, setEnableRotation] = useState(true);
 
-  // internal defaults (removed from UI per request)
-  const [edgeDistance] = useState(10); // kept internally
-  const [bladeThickness] = useState(2); // kept internally
+  // internal defaults for paper behavior
+  const [edgeDistance] = useState(0); // mm
+  const [bladeThickness] = useState(0); // mm
 
-  // presets (moved to top-right)
+  // presets in display units (converted to mm when applied)
   const presets = [
-    { label: "A2-ish (1200×800)", w: 1200, h: 800 },
-    { label: "A3-ish (1000×700)", w: 1000, h: 700 },
-    { label: "Small board (600×400)", w: 600, h: 400 },
+    { label: "22 × 28", w: 22, h: 28 },
+    { label: "28 × 44", w: 28, h: 44 },
+    { label: "20 × 30", w: 20, h: 30 },
+    { label: "23 × 36", w: 23, h: 36 },
+    { label: "31 × 43", w: 31, h: 43 },
+    { label: "29 × 44", w: 29, h: 44 },
+    { label: "25 × 35.5", w: 25, h: 35.5 },
+    { label: "25 × 37 (MAX)", w: 25, h: 37 },
   ];
 
+  // compute best/alt orientations (all inputs in mm)
   const { best, alt } = useMemo(() => {
-    const normal = computeForOrientation({ sheetW, sheetH, pieceW: cutW, pieceH: cutH, edgeDistance, bladeThickness, enableRotation });
-    const rotated = computeForOrientation({ sheetW, sheetH, pieceW: cutH, pieceH: cutW, edgeDistance, bladeThickness, enableRotation });
-    let best = normal;
-    let alt = rotated;
-    if (rotated.totalPieces > normal.totalPieces || (rotated.totalPieces === normal.totalPieces && rotated.wastePercent < normal.wastePercent)) {
-      best = rotated;
-      alt = normal;
-      best.chosenOrientation = "rotated";
-      alt.chosenOrientation = "normal";
-    } else {
-      best.chosenOrientation = "normal";
-      alt.chosenOrientation = "rotated";
-    }
-    return { best, alt };
-  }, [sheetW, sheetH, cutW, cutH, edgeDistance, bladeThickness, enableRotation]);
+    const normal = computeForOrientation({
+      sheetW: sheetWmm,
+      sheetH: sheetHmm,
+      pieceW: cutWmm,
+      pieceH: cutHmm,
+      edgeDistance,
+      bladeThickness,
+      enableRotation,
+    });
+    const rotated = computeForOrientation({
+      sheetW: sheetWmm,
+      sheetH: sheetHmm,
+      pieceW: cutHmm,
+      pieceH: cutWmm,
+      edgeDistance,
+      bladeThickness,
+      enableRotation,
+    });
 
-  const previewW = 820;
-  const previewH = 480;
-  const scale = sheetW === 0 || sheetH === 0 ? 1 : Math.min(previewW / sheetW, previewH / sheetH);
-  const strokeWidth = Math.max(0.2, Math.min(6, 1.6 * scale));
+    let chosen = normal;
+    let other = rotated;
+    if (
+      rotated.totalPieces > normal.totalPieces ||
+      (rotated.totalPieces === normal.totalPieces &&
+        rotated.wastePercent < normal.wastePercent)
+    ) {
+      chosen = rotated;
+      other = normal;
+      chosen.chosenOrientation = "rotated";
+      other.chosenOrientation = "normal";
+    } else {
+      chosen.chosenOrientation = "normal";
+      other.chosenOrientation = "rotated";
+    }
+
+    return { best: chosen, alt: other };
+  }, [
+    sheetWmm,
+    sheetHmm,
+    cutWmm,
+    cutHmm,
+    edgeDistance,
+    bladeThickness,
+    enableRotation,
+  ]);
+
+  // preview sizing + stroke scaling
+  const previewH = 420;
+  const minDim = Math.max(1, Math.min(sheetWmm, sheetHmm));
+  const strokeScale = Math.max(0.12, Math.min(3, minDim / 200));
+  const strokeWidth = strokeScale;
 
   const RENDER_LIMIT = 3000;
   const willTruncateRender = best.pieces.length > RENDER_LIMIT;
 
-  function exportJSON() {
-    const payload = {
-      sheet: { w: sheetW, h: sheetH, unit },
-      cut: { w: cutW, h: cutH },
-      edgeDistance,
-      bladeThickness,
-      enableRotation,
-      pieces: best.pieces,
-      summary: { chosen: best.chosenOrientation, totalPieces: best.totalPieces, rotatedInRight: best.rotatedInRightCount, rotatedInBottom: best.rotatedInBottomCount, wastePercent: Number(best.wastePercent.toFixed(6)) },
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `cut_layout_${sheetW}x${sheetH}_${cutW}x${cutH}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  /* ===== Input handlers (display ⇄ internal mm) ===== */
+  const onChangeUnit = (newUnit) => setUnit(newUnit);
 
-  // helper to sanitize numeric input typed in text field (removes non-digit/decimal)
-  function sanitizeNumberInput(value) {
-    if (value == null) return 0;
-    const cleaned = String(value).replace(/[^0-9.]/g, '');
-    // prevent multiple dots
-    const parts = cleaned.split('.');
-    if (parts.length <= 1) return cleaned === '' ? 0 : Number(cleaned);
-    return Number(parts.slice(0,2).join('.'));
-  }
+  const onChangeSheetW_display = (displayVal) =>
+    setSheetWmm(toMM(sanitizeNumberInput(displayVal), unit));
+  const onChangeSheetH_display = (displayVal) =>
+    setSheetHmm(toMM(sanitizeNumberInput(displayVal), unit));
+  const onChangeCutW_display = (displayVal) =>
+    setCutWmm(toMM(sanitizeNumberInput(displayVal), unit));
+  const onChangeCutH_display = (displayVal) =>
+    setCutHmm(toMM(sanitizeNumberInput(displayVal), unit));
 
+  /* ===== JSX (mobile-first responsive) ===== */
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Top summary bar - now with presets & unit on the right */}
-      <div className="w-full rounded-2xl p-4 bg-gradient-to-r from-indigo-600 via-pink-500 to-yellow-400 text-white shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+      {/* TOP SUMMARY */}
+      <div className="rounded-2xl p-5 bg-gradient-to-r from-indigo-600 via-pink-500 to-yellow-400 text-white flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-4">
-          <div className="text-2xl md:text-3xl font-extrabold">{best.totalPieces}</div>
-          <div className="text-sm md:text-base">
-            <div className="opacity-90">Total pieces</div>
-            <div className="text-xs opacity-80">(includes rotated fills if enabled)</div>
+          <div className="text-4xl font-extrabold">{best.totalPieces}</div>
+          <div className="text-sm opacity-90">Total pieces</div>
+        </div>
+
+        <div className="flex flex-wrap gap-4 items-center">
+          <div className="text-center">
+            <div className="text-xs">Waste</div>
+            <div className="text-2xl font-bold">
+              {best.wastePercent.toFixed(2)}%
+            </div>
+          </div>
+
+          <div className="text-center">
+            <div className="text-xs">Orientation</div>
+            <div className="text-lg font-semibold">
+              {best.chosenOrientation}
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
-          <div className="text-center">
-            <div className="text-sm opacity-90">Waste %</div>
-            <div className={`text-xl font-semibold ${best.wastePercent < 10 ? 'text-green-900' : best.wastePercent < 30 ? 'text-yellow-900' : 'text-red-900'}`}>{best.wastePercent.toFixed(2)}%</div>
-          </div>
-
-          <div className="text-center">
-            <div className="text-sm opacity-90">Rot fills (R / B)</div>
-            <div className="text-xl font-semibold">{best.rotatedInRightCount} / {best.rotatedInBottomCount}</div>
-          </div>
-
-          <div className="text-center">
-            <div className="text-sm opacity-90">Orientation</div>
-            <div className="text-xl font-semibold">{best.chosenOrientation}</div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* PRESets moved here */}
-          <select className="rounded px-2 py-1 text-sm" onChange={(e)=>{ const p = presets[Number(e.target.value)]; if(p){ setSheetW(p.w); setSheetH(p.h); } }}>
-            <option value="">Presets</option>
-            {presets.map((p,i)=> <option key={i} value={i}>{p.label}</option>)}
+        <div className="flex flex-wrap gap-2 items-center">
+          <select
+            className="bg-black text-white px-3 py-2 rounded text-sm"
+            defaultValue=""
+            onChange={(e) => {
+              const idx = Number(e.target.value);
+              if (!isNaN(idx) && presets[idx]) {
+                setSheetWmm(toMM(presets[idx].w, unit));
+                setSheetHmm(toMM(presets[idx].h, unit));
+              }
+            }}
+          >
+            <option value="" hidden>
+              Presets
+            </option>
+            {presets.map((p, i) => (
+              <option key={i} value={i}>
+                {p.label}
+              </option>
+            ))}
           </select>
 
-          {/* UNIT moved here */}
-          <select value={unit} onChange={(e)=>setUnit(e.target.value)} className="rounded px-2 py-1 text-sm">
-            <option>mm</option>
-            <option>cm</option>
-            <option>inch</option>
-            <option>meter</option>
+          <select
+            value={unit}
+            onChange={(e) => onChangeUnit(e.target.value)}
+            className="rounded px-2 py-1 text-sm"
+          >
+            <option value="mm">mm</option>
+            <option value="cm">cm</option>
+            <option value="inch">inch</option>
+            <option value="meter">meter</option>
           </select>
 
-          <button onClick={()=>setEnableRotation(s=>!s)} className={`px-4 py-2 rounded-full font-medium shadow ${enableRotation ? 'bg-white text-indigo-700' : 'bg-indigo-900 bg-opacity-20 text-white'}`}>{enableRotation ? 'Rotation: ON' : 'Rotation: OFF'}</button>
-          <button onClick={exportJSON} className="px-4 py-2 rounded-full bg-white bg-opacity-90 text-indigo-700 font-medium shadow">Export JSON</button>
+          <button
+            onClick={() => setEnableRotation((s) => !s)}
+            className={`px-4 py-2 rounded-full font-medium ${
+              enableRotation
+                ? "bg-white text-indigo-700"
+                : "bg-indigo-900 text-white"
+            }`}
+          >
+            {enableRotation ? "Rotation ON" : "Rotation OFF"}
+          </button>
         </div>
       </div>
 
-      {/* Main content: preview + inputs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 p-4 bg-white rounded-xl shadow">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-lg font-semibold">Preview</div>
-            <div className="text-sm text-gray-500">Rendering {best.pieces.length} pieces{willTruncateRender ? ` — showing first ${RENDER_LIMIT}` : ''}</div>
-          </div>
+      {/* MAIN: preview first on mobile, inputs to the side on larger screens */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* PREVIEW (full width on mobile, 2/3 on desktop) */}
+        <div className="lg:col-span-2 order-1">
+          <div className="bg-white rounded-xl overflow-hidden">
+            <div className="p-4 flex items-center justify-between">
+              <div className="text-lg font-semibold">Preview</div>
+              <div className="text-sm text-gray-500">
+                Rendering {best.pieces.length} pieces
+                {willTruncateRender ? ` — showing first ${RENDER_LIMIT}` : ""}
+              </div>
+            </div>
 
-          <div className="flex gap-4">
-            <div className="flex-shrink-0">
-              <svg width={previewW} height={previewH} viewBox={`0 0 ${sheetW} ${sheetH}`} style={{ border: '1px solid rgba(15,23,42,0.06)', background: '#ffffff' }} className="rounded">
-                <defs>
-                  <linearGradient id="rotGrad4" x1="0" x2="1">
-                    <stop offset="0%" stopColor="#34d399" />
-                    <stop offset="100%" stopColor="#10b981" />
-                  </linearGradient>
-                </defs>
+            <div className="w-full" style={{ height: previewH }}>
+              <svg
+                viewBox={`0 0 ${Math.max(1, Math.round(sheetWmm))} ${Math.max(
+                  1,
+                  Math.round(sheetHmm)
+                )}`}
+                preserveAspectRatio="xMidYMid meet"
+                className="w-full h-full"
+              >
+                {/* sheet (white background) */}
+                <rect
+                  x={0}
+                  y={0}
+                  width={sheetWmm}
+                  height={sheetHmm}
+                  fill="#ffffff"
+                />
 
-                <rect x={0} y={0} width={sheetW} height={sheetH} fill="#fbfdff" stroke="#e6eef8" strokeWidth={Math.max(0.5, strokeWidth)} />
-                <rect x={edgeDistance} y={edgeDistance} width={Math.max(0, sheetW - 2 * edgeDistance)} height={Math.max(0, sheetH - 2 * edgeDistance)} fill="none" stroke="#eef2ff" strokeDasharray="4" strokeWidth={Math.max(0.3, strokeWidth*0.6)} />
+                {/* waste strips (light red) */}
+                {best.rightStrip && (
+                  <rect
+                    x={best.rightStrip.x}
+                    y={best.rightStrip.y}
+                    width={best.rightStrip.w}
+                    height={best.rightStrip.h}
+                    fill="#fecaca"
+                    opacity="0.35"
+                  />
+                )}
+                {best.bottomStrip && (
+                  <rect
+                    x={best.bottomStrip.x}
+                    y={best.bottomStrip.y}
+                    width={best.bottomStrip.w}
+                    height={best.bottomStrip.h}
+                    fill="#fecaca"
+                    opacity="0.35"
+                  />
+                )}
 
+                {/* pieces */}
                 {best.pieces.slice(0, RENDER_LIMIT).map((p, idx) => (
-                  <g key={idx}>
-                    <rect x={p.x} y={p.y} width={p.w} height={p.h} fill={p.rotated ? 'url(#rotGrad4)' : '#60a5fa'} stroke={p.rotated ? '#065f46' : '#1e3a8a'} strokeWidth={Math.max(0.3, strokeWidth * (p.rotated ? 0.9 : 0.8))} />
-                  </g>
+                  <rect
+                    key={idx}
+                    x={p.x}
+                    y={p.y}
+                    width={p.w}
+                    height={p.h}
+                    fill={p.rotated ? "#34d399" : "#60a5fa"}
+                    stroke={p.rotated ? "#065f46" : "#1e3a8a"}
+                    strokeWidth={Math.max(
+                      0.12,
+                      strokeWidth * (p.rotated ? 0.9 : 0.8)
+                    )}
+                  />
                 ))}
 
-                {best.rightStrip && <rect x={best.rightStrip.x} y={best.rightStrip.y} width={best.rightStrip.w} height={best.rightStrip.h} fill="#fca5a5" opacity="0.12" />}
-                {best.bottomStrip && <rect x={best.bottomStrip.x} y={best.bottomStrip.y} width={best.bottomStrip.w} height={best.bottomStrip.h} fill="#fecaca" opacity="0.12" />}
-
+                {/* dashed cut-lines (thin) */}
                 {(() => {
                   const lines = [];
                   const spacing = Math.max(0, bladeThickness);
-                  const primaryFitX = best.fitCountX || 0;
-                  for (let ix = 1; ix < primaryFitX; ix++) {
-                    const x = edgeDistance + ix * (cutW + spacing) - spacing / 2;
-                    lines.push(<line key={`vx-${ix}`} x1={x} y1={edgeDistance} x2={x} y2={sheetH - edgeDistance} stroke="#94a3b8" strokeWidth={Math.max(0.2, strokeWidth * 0.35)} strokeDasharray="3" opacity="0.6" />);
+                  const px = best.fitCountX || 0;
+                  for (let ix = 1; ix < px; ix++) {
+                    const x =
+                      edgeDistance + ix * (cutWmm + spacing) - spacing / 2;
+                    lines.push(
+                      <line
+                        key={`vx-${ix}`}
+                        x1={x}
+                        y1={edgeDistance}
+                        x2={x}
+                        y2={sheetHmm - edgeDistance}
+                        stroke="#94a3b8"
+                        strokeWidth={Math.max(0.08, strokeWidth * 0.2)}
+                        strokeDasharray="3"
+                        opacity="0.5"
+                      />
+                    );
                   }
-                  const primaryFitY = best.fitCountY || 0;
-                  for (let iy = 1; iy < primaryFitY; iy++) {
-                    const y = edgeDistance + iy * (cutH + spacing) - spacing / 2;
-                    lines.push(<line key={`hy-${iy}`} x1={edgeDistance} y1={y} x2={sheetW - edgeDistance} y2={y} stroke="#94a3b8" strokeWidth={Math.max(0.2, strokeWidth * 0.35)} strokeDasharray="3" opacity="0.6" />);
+                  const py = best.fitCountY || 0;
+                  for (let iy = 1; iy < py; iy++) {
+                    const y =
+                      edgeDistance + iy * (cutHmm + spacing) - spacing / 2;
+                    lines.push(
+                      <line
+                        key={`hy-${iy}`}
+                        x1={edgeDistance}
+                        y1={y}
+                        x2={sheetWmm - edgeDistance}
+                        y2={y}
+                        stroke="#94a3b8"
+                        strokeWidth={Math.max(0.08, strokeWidth * 0.2)}
+                        strokeDasharray="3"
+                        opacity="0.5"
+                      />
+                    );
                   }
                   return lines;
                 })()}
               </svg>
             </div>
-
-            <div className="flex-1">
-              <div className="text-base font-semibold mb-2">Detailed Summary</div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="p-3 bg-gray-50 rounded">
-                  <div className="text-xs text-gray-500">Pieces per row (X)</div>
-                  <div className="font-semibold text-lg">{best.fitCountX}</div>
-                </div>
-
-                <div className="p-3 bg-gray-50 rounded">
-                  <div className="text-xs text-gray-500">Pieces per col (Y)</div>
-                  <div className="font-semibold text-lg">{best.fitCountY}</div>
-                </div>
-
-                <div className="p-3 bg-gray-50 rounded">
-                  <div className="text-xs text-gray-500">Primary pieces</div>
-                  <div className="font-semibold text-lg">{best.totalPiecesPrimary}</div>
-                </div>
-
-                <div className="p-3 bg-gray-50 rounded">
-                  <div className="text-xs text-gray-500">Rotated fills (Right / Bottom)</div>
-                  <div className="font-semibold text-lg">{best.rotatedInRightCount} / {best.rotatedInBottomCount}</div>
-                </div>
-
-                <div className="p-3 bg-gray-50 rounded col-span-2">
-                  <div className="text-xs text-gray-500">Waste area</div>
-                  <div className="font-semibold text-lg">{best.wasteArea.toFixed(2)} {unit}²</div>
-                </div>
-              </div>
-
-              {willTruncateRender && <div className="mt-4 p-3 bg-yellow-50 text-yellow-800 rounded text-sm">⚠️ Too many pieces to render ({best.pieces.length}). Preview truncated. Export JSON contains full list.</div>}
-            </div>
           </div>
         </div>
 
-        <aside className="p-4 bg-white rounded-xl shadow">
+        {/* INPUTS (stacked on mobile, right column on desktop) */}
+        <aside className="order-2 lg:order-none bg-white rounded-xl shadow p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="text-lg font-semibold">Inputs</div>
-            <div className="text-xs text-gray-400">Unit: {unit}</div>
+            <div className="text-xs text-gray-400">Display unit: {unit}</div>
           </div>
 
           <div className="space-y-3 text-sm">
-            {/* Presets removed from here - moved to top */}
+            <label className="block text-sm font-medium">
+              Sheet Width ({unit})
+            </label>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={toDisplay(sheetWmm, unit)}
+              onChange={(e) => onChangeSheetW_display(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-lg"
+            />
 
-            <label className="block text-sm font-medium">Sheet Width ({unit})</label>
-            <input type="text" inputMode="numeric" value={sheetW} onChange={(e)=>{ setSheetW(sanitizeNumberInput(e.target.value)); }} className="w-full border rounded px-3 py-2 text-lg" />
+            <label className="block text-sm font-medium">
+              Sheet Height ({unit})
+            </label>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={toDisplay(sheetHmm, unit)}
+              onChange={(e) => onChangeSheetH_display(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-lg"
+            />
 
-            <label className="block text-sm font-medium">Sheet Height ({unit})</label>
-            <input type="text" inputMode="numeric" value={sheetH} onChange={(e)=>{ setSheetH(sanitizeNumberInput(e.target.value)); }} className="w-full border rounded px-3 py-2 text-lg" />
+            <label className="block text-sm font-medium">
+              Cut Width ({unit})
+            </label>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={toDisplay(cutWmm, unit)}
+              onChange={(e) => onChangeCutW_display(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-lg"
+            />
 
-            <label className="block text-sm font-medium">Cut Width ({unit})</label>
-            <input type="text" inputMode="numeric" value={cutW} onChange={(e)=>{ setCutW(sanitizeNumberInput(e.target.value)); }} className="w-full border rounded px-3 py-2 text-lg" />
+            <label className="block text-sm font-medium">
+              Cut Height ({unit})
+            </label>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={toDisplay(cutHmm, unit)}
+              onChange={(e) => onChangeCutH_display(e.target.value)}
+              className="w-full border rounded px-3 py-2 text-lg"
+            />
 
-            <label className="block text-sm font-medium">Cut Height ({unit})</label>
-            <input type="text" inputMode="numeric" value={cutH} onChange={(e)=>{ setCutH(sanitizeNumberInput(e.target.value)); }} className="w-full border rounded px-3 py-2 text-lg" />
-
-            {/* edgeDistance & bladeThickness inputs removed as requested */}
-
-            <div className="text-xs text-gray-500">Note: Edge distance and blade thickness use app defaults (Edge: {edgeDistance} {unit}, Blade: {bladeThickness} {unit}). If you want quick access to these later I can add a compact advanced toggle.</div>
+            <div className="text-xs text-gray-500">
+              Edge & blade defaults: Edge {edgeDistance} mm, Blade{" "}
+              {bladeThickness} mm (internal). Advanced panel available later.
+            </div>
           </div>
         </aside>
       </div>
 
-      <footer className="text-center text-sm text-gray-500">Inputs updated: no spinners, presets & unit moved to the top. Want an "Advanced" toggle to reveal edge/kerf settings later?</footer>
+      <footer className="text-center text-xs text-gray-400">
+        Mobile-first responsive layout done. Next: pinch-zoom preview &
+        tap-to-inspect pieces?
+      </footer>
     </div>
   );
 }
