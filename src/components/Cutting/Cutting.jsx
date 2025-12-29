@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 
 /* ===== Unit helpers ===== */
 const UNIT_FACTORS = {
@@ -10,25 +10,30 @@ const UNIT_FACTORS = {
 
 function toDisplay(mmValue, unit) {
   const v = mmValue / (UNIT_FACTORS[unit] || 1);
+  if (!isFinite(v)) return "";
   return Number.isInteger(v)
     ? String(v)
     : v.toFixed(3).replace(/(?:\.0+|(\.\d+?)0+)$/, "$1");
 }
 
 function toMM(displayValue, unit) {
-  const v = Number(displayValue) || 0;
-  return v * (UNIT_FACTORS[unit] || 1);
+  const n = Number(displayValue);
+  if (isNaN(n)) return 0;
+  return n * (UNIT_FACTORS[unit] || 1);
 }
 
+/* Accepts free-typing strings; allows single dot and leading dot like ".5" */
 function sanitizeNumberInput(value) {
   if (value == null) return "";
-  const cleaned = String(value).replace(/[^0-9.]/g, "");
+  let cleaned = String(value).replace(/[^0-9.]/g, "");
   const parts = cleaned.split(".");
-  if (parts.length > 2) return parts[0] + "." + parts.slice(1).join("");
+  if (parts.length > 2) {
+    cleaned = parts[0] + "." + parts.slice(1).join("");
+  }
   return cleaned;
 }
 
-/* ===== Packing utilities ===== */
+/* ===== Packing / math utilities ===== */
 const EPS = 1e-9;
 
 function packIntoWaste({ strip, pieceW, pieceH, bladeThickness }) {
@@ -55,9 +60,6 @@ function packIntoWaste({ strip, pieceW, pieceH, bladeThickness }) {
   return pieces;
 }
 
-/* ===== Core orientation compute =====
-   All numbers passed are expected in the same unit (we use mm internally)
-*/
 function computeForOrientation({
   sheetW,
   sheetH,
@@ -99,6 +101,7 @@ function computeForOrientation({
           h: effH,
         }
       : null;
+
   const bottomStrip =
     leftoverInsideH > 0
       ? {
@@ -111,7 +114,6 @@ function computeForOrientation({
 
   let rotatedInRight = [];
   let rotatedInBottom = [];
-
   if (enableRotation) {
     const rightStripPack = rightStrip
       ? { ...rightStrip, h: Math.max(0, rightStrip.h - leftoverInsideH) }
@@ -167,34 +169,52 @@ function computeForOrientation({
 
 /* ===== Component ===== */
 export default function CuttingEngine() {
-  // internal canonical units = mm
+  // canonical internal units = mm
   const [unit, setUnit] = useState("inch");
 
-  // sensible defaults (stored in mm)
+  // internal mm values (math uses these)
   const [sheetWmm, setSheetWmm] = useState(toMM(25, "inch"));
   const [sheetHmm, setSheetHmm] = useState(toMM(35.5, "inch"));
   const [cutWmm, setCutWmm] = useState(toMM(5, "inch"));
   const [cutHmm, setCutHmm] = useState(toMM(7, "inch"));
 
+  // display strings — let the user type freely (supports "35.", ".5", etc.)
+  const [sheetW_display, setSheetW_display] = useState(
+    toDisplay(sheetWmm, unit)
+  );
+  const [sheetH_display, setSheetH_display] = useState(
+    toDisplay(sheetHmm, unit)
+  );
+  const [cutW_display, setCutW_display] = useState(toDisplay(cutWmm, unit));
+  const [cutH_display, setCutH_display] = useState(toDisplay(cutHmm, unit));
+
   const [enableRotation, setEnableRotation] = useState(true);
 
-  // internal defaults for paper behavior
+  // internal defaults for paper behaviour
   const [edgeDistance] = useState(0); // mm
   const [bladeThickness] = useState(0); // mm
 
-  // presets in display units (converted to mm when applied)
   const presets = [
-    { label: "28 × 22", w: 28, h: 22 },
-    { label: "44 × 28", w: 44, h: 28 },
-    { label: "30 × 20", w: 30, h: 20 },
-    { label: "36 × 23", w: 36, h: 23 },
-    { label: "43 × 31", w: 43, h: 31 },
-    { label: "44 × 29", w: 44, h: 29 },
-    { label: "35.5 × 25", w: 35.5, h: 25 },
-    { label: "37 × 25", w: 37, h: 25 },
+    { label: "28 x 22", w: 28, h: 22 },
+    { label: "44 x 28", w: 44, h: 28 },
+    { label: "30 x 20", w: 30, h: 20 },
+    { label: "36 x 23", w: 36, h: 23 },
+    { label: "43 x 31", w: 43, h: 31 },
+    { label: "44 x 29", w: 44, h: 29 },
+    { label: "35.5 x 25", w: 35.5, h: 25 },
+    { label: "37 x 25", w: 37, h: 25 },
   ];
 
-  // compute best/alt orientations (all inputs in mm)
+  // Sync display strings when unit changes or internal mm changes due to presets/external actions
+  useEffect(() => {
+    setSheetW_display(toDisplay(sheetWmm, unit));
+    setSheetH_display(toDisplay(sheetHmm, unit));
+    setCutW_display(toDisplay(cutWmm, unit));
+    setCutH_display(toDisplay(cutHmm, unit));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unit, sheetWmm, sheetHmm, cutWmm, cutHmm]);
+
+  // compute best orientation using internal mm values
   const { best, alt } = useMemo(() => {
     const normal = computeForOrientation({
       sheetW: sheetWmm,
@@ -242,28 +262,67 @@ export default function CuttingEngine() {
     enableRotation,
   ]);
 
-  // preview sizing + stroke scaling
+  // preview sizing and limits
   const previewH = 420;
   const minDim = Math.max(1, Math.min(sheetWmm, sheetHmm));
   const strokeScale = Math.max(0.12, Math.min(3, minDim / 200));
   const strokeWidth = strokeScale;
-
   const RENDER_LIMIT = 3000;
   const willTruncateRender = best.pieces.length > RENDER_LIMIT;
 
-  /* ===== Input handlers (display ⇄ internal mm) ===== */
-  const onChangeUnit = (newUnit) => setUnit(newUnit);
+  /* ===== Handlers that are decimal-friendly ===== */
 
-  const onChangeSheetW_display = (displayVal) =>
-    setSheetWmm(toMM(sanitizeNumberInput(displayVal), unit));
-  const onChangeSheetH_display = (displayVal) =>
-    setSheetHmm(toMM(sanitizeNumberInput(displayVal), unit));
-  const onChangeCutW_display = (displayVal) =>
-    setCutWmm(toMM(sanitizeNumberInput(displayVal), unit));
-  const onChangeCutH_display = (displayVal) =>
-    setCutHmm(toMM(sanitizeNumberInput(displayVal), unit));
+  const handleUnitChange = (newUnit) => {
+    setUnit(newUnit);
+    // display strings will update because of useEffect that watches unit
+  };
 
-  /* ===== JSX (mobile-first responsive) ===== */
+  const onChangeSheetW_display = (raw) => {
+    const clean = sanitizeNumberInput(raw);
+    setSheetW_display(clean);
+    // update internal mm only when user has typed some numeric content other than "." or empty
+    if (clean !== "" && clean !== ".") {
+      setSheetWmm(toMM(clean, unit));
+    }
+  };
+
+  const onChangeSheetH_display = (raw) => {
+    const clean = sanitizeNumberInput(raw);
+    setSheetH_display(clean);
+    if (clean !== "" && clean !== ".") {
+      setSheetHmm(toMM(clean, unit));
+    }
+  };
+
+  const onChangeCutW_display = (raw) => {
+    const clean = sanitizeNumberInput(raw);
+    setCutW_display(clean);
+    if (clean !== "" && clean !== ".") {
+      setCutWmm(toMM(clean, unit));
+    }
+  };
+
+  const onChangeCutH_display = (raw) => {
+    const clean = sanitizeNumberInput(raw);
+    setCutH_display(clean);
+    if (clean !== "" && clean !== ".") {
+      setCutHmm(toMM(clean, unit));
+    }
+  };
+
+  // apply preset (display units provided in presets array)
+  const applyPreset = (idx) => {
+    if (!presets[idx]) return;
+    const p = presets[idx];
+    // convert preset numbers (in display units) to internal mm using current unit
+    const newWmm = toMM(p.w, unit);
+    const newHmm = toMM(p.h, unit);
+    setSheetWmm(newWmm);
+    setSheetHmm(newHmm);
+    // display values will sync via useEffect
+  };
+
+  /* ===== JSX ===== */
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
       {/* TOP SUMMARY */}
@@ -293,13 +352,7 @@ export default function CuttingEngine() {
           <select
             className="bg-black text-white px-3 py-2 rounded text-sm"
             defaultValue=""
-            onChange={(e) => {
-              const idx = Number(e.target.value);
-              if (!isNaN(idx) && presets[idx]) {
-                setSheetWmm(toMM(presets[idx].w, unit));
-                setSheetHmm(toMM(presets[idx].h, unit));
-              }
-            }}
+            onChange={(e) => applyPreset(Number(e.target.value))}
           >
             <option value="" hidden>
               Presets
@@ -313,7 +366,7 @@ export default function CuttingEngine() {
 
           <select
             value={unit}
-            onChange={(e) => onChangeUnit(e.target.value)}
+            onChange={(e) => handleUnitChange(e.target.value)}
             className="rounded px-3 py-1.5 text-sm bg-black text-white border border-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="mm" className="bg-black text-white">
@@ -343,9 +396,9 @@ export default function CuttingEngine() {
         </div>
       </div>
 
-      {/* MAIN: preview first on mobile, inputs to the side on larger screens */}
+      {/* MAIN */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* PREVIEW (full width on mobile, 2/3 on desktop) */}
+        {/* PREVIEW */}
         <div className="lg:col-span-2 order-1">
           <div className="bg-white rounded-xl overflow-hidden">
             <div className="p-4 flex items-center justify-between">
@@ -365,7 +418,7 @@ export default function CuttingEngine() {
                 preserveAspectRatio="xMidYMid meet"
                 className="w-full h-full"
               >
-                {/* sheet (white background) */}
+                {/* sheet background */}
                 <rect
                   x={0}
                   y={0}
@@ -460,7 +513,7 @@ export default function CuttingEngine() {
           </div>
         </div>
 
-        {/* INPUTS (stacked on mobile, right column on desktop) */}
+        {/* INPUTS */}
         <aside className="order-2 lg:order-none bg-white rounded-xl shadow p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="text-lg font-semibold">Inputs</div>
@@ -474,9 +527,10 @@ export default function CuttingEngine() {
             <input
               type="text"
               inputMode="decimal"
-              value={toDisplay(sheetWmm, unit)}
+              value={sheetW_display}
               onChange={(e) => onChangeSheetW_display(e.target.value)}
               className="w-full border rounded px-3 py-2 text-lg"
+              placeholder="e.g. 25 or 25.5"
             />
 
             <label className="block text-sm font-medium">
@@ -485,9 +539,10 @@ export default function CuttingEngine() {
             <input
               type="text"
               inputMode="decimal"
-              value={toDisplay(sheetHmm, unit)}
+              value={sheetH_display}
               onChange={(e) => onChangeSheetH_display(e.target.value)}
               className="w-full border rounded px-3 py-2 text-lg"
+              placeholder="e.g. 35 or 35.5"
             />
 
             <label className="block text-sm font-medium">
@@ -496,9 +551,10 @@ export default function CuttingEngine() {
             <input
               type="text"
               inputMode="decimal"
-              value={toDisplay(cutWmm, unit)}
+              value={cutW_display}
               onChange={(e) => onChangeCutW_display(e.target.value)}
               className="w-full border rounded px-3 py-2 text-lg"
+              placeholder="e.g. 5 or 5.5"
             />
 
             <label className="block text-sm font-medium">
@@ -507,18 +563,23 @@ export default function CuttingEngine() {
             <input
               type="text"
               inputMode="decimal"
-              value={toDisplay(cutHmm, unit)}
+              value={cutH_display}
               onChange={(e) => onChangeCutH_display(e.target.value)}
               className="w-full border rounded px-3 py-2 text-lg"
+              placeholder="e.g. 7 or 7.5"
             />
 
             <div className="text-xs text-gray-500">
               Edge & blade defaults: Edge {edgeDistance} mm, Blade{" "}
-              {bladeThickness} mm (internal). Advanced panel available later.
+              {bladeThickness} mm (internal).
             </div>
           </div>
         </aside>
       </div>
+
+      <footer className="text-center text-xs text-gray-400">
+        Decimal-friendly inputs live. Type "35.", "35.5", or ".6" — all good.
+      </footer>
     </div>
   );
 }

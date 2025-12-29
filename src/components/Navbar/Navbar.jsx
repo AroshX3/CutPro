@@ -13,7 +13,7 @@ const Navbar = () => {
           <div className="flex items-center gap-2">
             <h2 className="font-poppins font-semibold text-[42px] flex items-center gap-1">
               CutPro
-              <LuScissors className="text-blue-600 text-2xl" />
+              <LuScissors className="text-[blue] text-[30px]" />
             </h2>
           </div>
 
