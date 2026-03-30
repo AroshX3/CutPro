@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { LuScissors } from "react-icons/lu";
 import { HiOutlineMenuAlt3, HiX } from "react-icons/hi";
+import { Link } from "react-router";
 
 const Navbar = () => {
   const [open, setOpen] = useState(false);
@@ -11,33 +12,27 @@ const Navbar = () => {
         <div className="flex items-center justify-between h-16">
           {/* LOGO */}
           <div className="flex items-center gap-2">
-            <h2 className="font-poppins font-semibold text-[42px] flex items-center gap-1">
+            <a href="/" className="font-poppins font-semibold text-[42px] flex items-center gap-1">
               CutPro
               <LuScissors className="text-[blue] text-[30px]" />
-            </h2>
+            </a>
           </div>
 
-          {/* DESKTOP MENU */}
           <ul className="hidden md:flex gap-6 font-medium">
             <li>
-              <a href="#" className="hover:text-blue-600">
+              <Link to="/" className="hover:text-blue-600">
                 Home
-              </a>
+              </Link>
             </li>
             <li>
-              <a href="#" className="hover:text-blue-600">
-                Calculator
-              </a>
-            </li>
-            <li>
-              <a href="#" className="hover:text-blue-600">
-                Presets
-              </a>
-            </li>
-            <li>
-              <a href="#" className="hover:text-blue-600">
+              <Link to="/about" className="hover:text-blue-600">
                 About
-              </a>
+              </Link>
+            </li>
+            <li>
+              <Link to="/cuttingCenter" className="hover:text-blue-600">
+                Cutting Center
+              </Link>
             </li>
           </ul>
 
@@ -53,24 +48,19 @@ const Navbar = () => {
         <div className="md:hidden bg-white shadow-lg">
           <ul className="flex flex-col gap-4 px-6 py-4 font-medium">
             <li>
-              <a href="#" className="block">
+              <Link to="/" className="block">
                 Home
-              </a>
+              </Link>
             </li>
             <li>
-              <a href="#" className="block">
-                Calculator
-              </a>
-            </li>
-            <li>
-              <a href="#" className="block">
-                Presets
-              </a>
-            </li>
-            <li>
-              <a href="#" className="block">
+              <Link to="/about" className="block">
                 About
-              </a>
+              </Link>
+            </li>
+            <li>
+              <link to="/cuttingCenter" className="block">
+                Cutting Center
+              </link>
             </li>
           </ul>
         </div>

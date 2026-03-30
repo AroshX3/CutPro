@@ -568,11 +568,6 @@ export default function CuttingEngine() {
               className="w-full border rounded px-3 py-2 text-lg"
               placeholder="e.g. 7 or 7.5"
             />
-
-            <div className="text-xs text-gray-500">
-              Edge & blade defaults: Edge {edgeDistance} mm, Blade{" "}
-              {bladeThickness} mm (internal).
-            </div>
           </div>
         </aside>
       </div>
