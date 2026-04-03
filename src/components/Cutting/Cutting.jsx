@@ -180,10 +180,10 @@ export default function CuttingEngine() {
 
   // display strings — let the user type freely (supports "35.", ".5", etc.)
   const [sheetW_display, setSheetW_display] = useState(
-    toDisplay(sheetWmm, unit)
+    toDisplay(sheetWmm, unit),
   );
   const [sheetH_display, setSheetH_display] = useState(
-    toDisplay(sheetHmm, unit)
+    toDisplay(sheetHmm, unit),
   );
   const [cutW_display, setCutW_display] = useState(toDisplay(cutWmm, unit));
   const [cutH_display, setCutH_display] = useState(toDisplay(cutHmm, unit));
@@ -413,7 +413,7 @@ export default function CuttingEngine() {
               <svg
                 viewBox={`0 0 ${Math.max(1, Math.round(sheetWmm))} ${Math.max(
                   1,
-                  Math.round(sheetHmm)
+                  Math.round(sheetHmm),
                 )}`}
                 preserveAspectRatio="xMidYMid meet"
                 className="w-full h-full"
@@ -461,7 +461,7 @@ export default function CuttingEngine() {
                     stroke={p.rotated ? "#065f46" : "#1e3a8a"}
                     strokeWidth={Math.max(
                       0.12,
-                      strokeWidth * (p.rotated ? 0.9 : 0.8)
+                      strokeWidth * (p.rotated ? 0.9 : 0.8),
                     )}
                   />
                 ))}
@@ -485,7 +485,7 @@ export default function CuttingEngine() {
                         strokeWidth={Math.max(0.08, strokeWidth * 0.2)}
                         strokeDasharray="3"
                         opacity="0.5"
-                      />
+                      />,
                     );
                   }
                   const py = best.fitCountY || 0;
@@ -503,7 +503,7 @@ export default function CuttingEngine() {
                         strokeWidth={Math.max(0.08, strokeWidth * 0.2)}
                         strokeDasharray="3"
                         opacity="0.5"
-                      />
+                      />,
                     );
                   }
                   return lines;
@@ -571,10 +571,6 @@ export default function CuttingEngine() {
           </div>
         </aside>
       </div>
-
-      <footer className="text-center text-xs text-gray-400">
-        Decimal-friendly inputs live. Type "35.", "35.5", or ".6" — all good.
-      </footer>
     </div>
   );
 }
